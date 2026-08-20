@@ -13,7 +13,11 @@
 --   because FX and fee splits produce sub-cent intermediate values.
 --
 -- * currency is stored alongside amount and never defaulted. An amount without
---   its currency is not a quantity of money.
+--   its currency is not a quantity of money. VARCHAR(3) rather than CHAR(3):
+--   in Postgres char(n) is blank-padded and compares with trailing spaces
+--   ignored, which hides bugs rather than catching them, and it has no storage
+--   or speed advantage over varchar. The length is already pinned by the CHECK
+--   below, and varchar is what Hibernate maps a String to by default.
 --
 -- * status is VARCHAR + CHECK rather than a Postgres ENUM (adding a value to an
 --   ENUM is a schema migration with lock implications) and rather than an int
@@ -29,7 +33,7 @@ CREATE TABLE payment_order (
     order_no     VARCHAR(64)    NOT NULL,
     merchant_id  VARCHAR(64)    NOT NULL,
     amount       NUMERIC(19, 4) NOT NULL,
-    currency     CHAR(3)        NOT NULL,
+    currency     VARCHAR(3)     NOT NULL,
     status       VARCHAR(16)    NOT NULL,
     channel_ref  VARCHAR(64),
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT now(),
