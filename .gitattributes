@@ -1,0 +1,13 @@
+# Normalise to LF in the repository; check out with native endings on Windows.
+* text=auto
+
+# Shell scripts must stay LF even on Windows - CRLF breaks the shebang line.
+mvnw       text eol=lf
+*.sh       text eol=lf
+
+# Batch scripts must stay CRLF.
+mvnw.cmd   text eol=crlf
+*.bat      text eol=crlf
+
+*.sql      text eol=lf
+*.yml      text eol=lf

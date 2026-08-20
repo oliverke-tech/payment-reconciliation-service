@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: payment-reconciliation-service
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payments}
+    username: ${DB_USER:payments}
+    password: ${DB_PASSWORD:payments}
+    hikari:
+      # Left at the Hikari default of 10 on purpose. The Step 3 load test needs a
+      # realistic, unmodified baseline; pool sizing is a Step 10 conversation.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      pool-name: prs-pool
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate only checks that the entities still
+      # match it and fails fast at startup if they have drifted.
+      ddl-auto: validate
+    # The persistence context must not stay open for the duration of the HTTP
+    # response. Transaction boundaries are the subject of this project; an
+    # implicit request-scoped session would blur every one of them.
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # No baseline-on-migrate: this database starts empty and every schema change
+    # arrives as a numbered migration.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.flywaydb: INFO
