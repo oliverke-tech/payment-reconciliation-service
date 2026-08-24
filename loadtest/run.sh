@@ -34,6 +34,7 @@ fi
 
 echo "clearing previous $MERCHANT / $WARMUP_MERCHANT rows"
 psql_q "DELETE FROM payment_order WHERE merchant_id IN ('$MERCHANT', '$WARMUP_MERCHANT');" > /dev/null
+psql_q "DELETE FROM idempotency_record WHERE merchant_id IN ('$MERCHANT', '$WARMUP_MERCHANT');" > /dev/null
 
 echo "running $VUS VUs against $HOST_URL"
 echo
@@ -66,6 +67,10 @@ fi
 # The warmup rows have served their purpose; drop them so the table only ever
 # holds rows the measurement is actually about.
 psql_q "DELETE FROM payment_order WHERE merchant_id = '$WARMUP_MERCHANT';" > /dev/null
+# Every warmup request carries its own key, so it also leaves a row here. Left
+# uncleaned these accumulate across runs - thousands of them after a handful of
+# 200-VU runs - and slowly change the very index the measurement depends on.
+psql_q "DELETE FROM idempotency_record WHERE merchant_id = '$WARMUP_MERCHANT';" > /dev/null
 
 echo
 echo "=============================================================="

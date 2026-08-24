@@ -20,7 +20,7 @@ import { check, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 
 const created = new Counter('order_created_201');
-const replayed = new Counter('order_replayed_200');
+const replayed = new Counter('order_replayed');
 const inProgress = new Counter('idempotency_in_progress_409');
 const keyReused = new Counter('idempotency_key_reused_422');
 const unexpected = new Counter('unexpected_status');
@@ -135,12 +135,22 @@ export function herd(data) {
     tags: { name: 'POST /api/v1/payment-orders' },
   });
 
+  // A replay is NOT distinguishable by status code: the server deliberately
+  // returns the original 201 with the original body, because a retry is meant
+  // to be indistinguishable from the request it repeats. The Idempotent-Replay
+  // header is the only thing that separates "this created an order" from "this
+  // was handed a copy of one that already existed" - and that distinction is
+  // the entire before/after result.
+  const isReplay = res.headers['Idempotent-Replay'] === 'true';
+
   switch (res.status) {
-    case 201:
-      created.add(1);
-      break;
     case 200:
-      replayed.add(1);
+    case 201:
+      if (isReplay) {
+        replayed.add(1);
+      } else {
+        created.add(1);
+      }
       break;
     case 409:
       inProgress.add(1);
