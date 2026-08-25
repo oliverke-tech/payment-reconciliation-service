@@ -42,7 +42,7 @@ class ApplicationSmokeTest {
 
         assertThat(columns).containsExactly(
                 "id", "order_no", "merchant_id", "amount", "currency",
-                "status", "channel_ref", "created_at", "updated_at");
+                "status", "channel_ref", "created_at", "updated_at", "version");
     }
 
     @Test

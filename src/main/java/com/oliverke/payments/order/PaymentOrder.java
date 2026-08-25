@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -69,13 +70,26 @@ public class PaymentOrder {
     private Instant createdAt;
 
     /**
-     * Also DB-defaulted at insert. Nothing updates an order yet; when Step 6
-     * introduces status transitions this needs a trigger to keep it moving,
-     * otherwise it silently stays frozen at the creation time.
+     * Maintained by the payment_order_set_updated_at trigger added in V3, so it
+     * stays on the same clock as createdAt rather than on the application's.
+     * Read back after both insert and update, because the value Hibernate would
+     * otherwise hold in memory is whatever it was before the trigger ran.
      */
-    @Generated(event = EventType.INSERT)
+    @Generated(event = {EventType.INSERT, EventType.UPDATE})
     @Column(name = "updated_at", insertable = false, updatable = false)
     private Instant updatedAt;
+
+    /**
+     * Optimistic lock stamp. Hibernate increments it on every update and makes
+     * the UPDATE conditional on the value it read, so if two callers decide this
+     * order's fate concurrently the second one fails loudly with an
+     * OptimisticLockingFailureException instead of silently overwriting the
+     * first. Without it, "last write wins" would let a FAILED verdict quietly
+     * erase a SUCCESS.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     protected PaymentOrder() {
         // for JPA
@@ -92,6 +106,39 @@ public class PaymentOrder {
     /** A newly accepted order, before anything has been sent to the channel. */
     public static PaymentOrder open(String orderNo, String merchantId, BigDecimal amount, String currency) {
         return new PaymentOrder(orderNo, merchantId, amount, currency);
+    }
+
+    /**
+     * Moves this order to {@code target}, enforcing the graph on
+     * {@link OrderStatus}.
+     *
+     * <p>Asking for the state it is already in is a no-op that returns
+     * {@code false} rather than throwing: channel callbacks are delivered at
+     * least once, so a repeat is normal traffic and not an error. Any other
+     * illegal move throws.
+     *
+     * @return whether the order actually changed
+     * @throws IllegalStatusTransitionException if the move is not permitted
+     */
+    public boolean transitionTo(OrderStatus target) {
+        if (this.status == target) {
+            return false;
+        }
+        if (!this.status.canTransitionTo(target)) {
+            throw new IllegalStatusTransitionException(this.orderNo, this.status, target);
+        }
+        this.status = target;
+        return true;
+    }
+
+    /**
+     * Records the identifier the channel assigned. Separate from the status
+     * transition because the two do not always arrive together - an order can be
+     * accepted by the channel (PROCESSING, ref known) long before the channel
+     * says whether it worked.
+     */
+    public void recordChannelRef(String channelRef) {
+        this.channelRef = channelRef;
     }
 
     public Long getId() {
@@ -124,6 +171,10 @@ public class PaymentOrder {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public long getVersion() {
+        return version;
     }
 
     public Instant getUpdatedAt() {

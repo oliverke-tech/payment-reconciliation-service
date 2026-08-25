@@ -1,0 +1,34 @@
+# Profile: generator
+#
+# Turns the application into a one-shot command-line tool. Without this it starts
+# Tomcat, runs the generator, and then sits there serving HTTP forever - which is
+# fine interactively and useless from a script or a CI step.
+#
+#   java -jar target/payment-reconciliation-service-0.1.0-SNAPSHOT.jar \
+#        --spring.profiles.active=generator \
+#        --statement.date=2026-08-24 --statement.orders=200 --statement.seed=42
+
+spring:
+  main:
+    # No web server: nothing keeps the JVM alive once the runner returns, so the
+    # process exits with the runner's status the way a command-line tool should.
+    web-application-type: none
+
+statement:
+  date: null          # defaults to today, in UTC
+  orders: 200
+  seed: 42
+  output-dir: data/statements
+  success-rate: 0.9
+  local-only: 3
+  channel-only: 3
+  amount-mismatch: 3
+  status-mismatch: 3
+
+logging:
+  level:
+    # The generator's own progress is the point of running it; Spring's startup
+    # chatter is not.
+    org.springframework: WARN
+    org.hibernate: WARN
+    com.oliverke.payments.channel: INFO
