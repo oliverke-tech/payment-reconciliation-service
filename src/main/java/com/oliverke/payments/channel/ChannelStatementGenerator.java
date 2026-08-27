@@ -2,6 +2,7 @@ package com.oliverke.payments.channel;
 
 import com.oliverke.payments.order.OrderStatus;
 import com.oliverke.payments.order.PaymentOrder;
+import com.oliverke.payments.recon.DiffType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -97,7 +98,7 @@ public class ChannelStatementGenerator {
 
         // 1. LOCAL_ONLY - we settled it; the statement never mentions it.
         for (PaymentOrder order : localOnly) {
-            injected.add(csv(DiscrepancyType.LOCAL_ONLY.name(), order.getOrderNo(), order.getChannelRef(),
+            injected.add(csv(DiffType.LOCAL_ONLY.name(), order.getOrderNo(), order.getChannelRef(),
                     order.getAmount().toPlainString(), "", order.getStatus().name(), ""));
         }
 
@@ -105,7 +106,7 @@ public class ChannelStatementGenerator {
         for (PaymentOrder order : amountOff) {
             BigDecimal channelAmount = skewAmount(order.getAmount(), random);
             body.add(line(order, channelAmount, order.getStatus(), settledAt));
-            injected.add(csv(DiscrepancyType.AMOUNT_MISMATCH.name(), order.getOrderNo(), order.getChannelRef(),
+            injected.add(csv(DiffType.AMOUNT_MISMATCH.name(), order.getOrderNo(), order.getChannelRef(),
                     order.getAmount().toPlainString(), channelAmount.toPlainString(),
                     order.getStatus().name(), order.getStatus().name()));
         }
@@ -118,7 +119,7 @@ public class ChannelStatementGenerator {
                     ? OrderStatus.FAILED
                     : OrderStatus.SUCCESS;
             body.add(line(order, order.getAmount(), channelStatus, settledAt));
-            injected.add(csv(DiscrepancyType.STATUS_MISMATCH.name(), order.getOrderNo(), order.getChannelRef(),
+            injected.add(csv(DiffType.STATUS_MISMATCH.name(), order.getOrderNo(), order.getChannelRef(),
                     order.getAmount().toPlainString(), order.getAmount().toPlainString(),
                     order.getStatus().name(), channelStatus.name()));
         }
@@ -131,7 +132,7 @@ public class ChannelStatementGenerator {
             body.add(csv(ghostRef, ghostOrderNo, ChannelSimulator.randomMerchant(random),
                     amount.toPlainString(), ChannelSimulator.CURRENCY,
                     OrderStatus.SUCCESS.name(), settledAt.toString()));
-            injected.add(csv(DiscrepancyType.CHANNEL_ONLY.name(), ghostOrderNo, ghostRef,
+            injected.add(csv(DiffType.CHANNEL_ONLY.name(), ghostOrderNo, ghostRef,
                     "", amount.toPlainString(), "", OrderStatus.SUCCESS.name()));
         }
 

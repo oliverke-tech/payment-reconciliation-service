@@ -1,11 +1,11 @@
-package com.oliverke.payments.channel;
+package com.oliverke.payments.recon;
 
 /**
  * The four ways our records and the channel's can disagree. These are what the
  * generator injects on purpose and what the Step 8 job has to find - exactly
  * these, no more and no fewer.
  */
-public enum DiscrepancyType {
+public enum DiffType {
 
     /** We have an order that reached the channel; the statement has no line for it. */
     LOCAL_ONLY,

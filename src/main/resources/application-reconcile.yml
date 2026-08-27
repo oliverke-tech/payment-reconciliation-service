@@ -1,0 +1,22 @@
+# Profile: reconcile
+#
+# Reconciles one business day and exits. The scheduled job inside the running
+# service is the real entry point; this is for running a day on demand.
+#
+#   java -jar target/payment-reconciliation-service-0.1.0-SNAPSHOT.jar \
+#        --spring.profiles.active=reconcile \
+#        --reconciliation.date=2026-08-24
+
+spring:
+  main:
+    web-application-type: none
+
+reconciliation:
+  statement-dir: data/statements
+  date: null          # defaults to yesterday, in UTC
+
+logging:
+  level:
+    org.springframework: WARN
+    org.hibernate: WARN
+    com.oliverke.payments.recon: INFO
