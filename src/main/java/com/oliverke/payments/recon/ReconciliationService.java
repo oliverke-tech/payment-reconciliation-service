@@ -79,7 +79,27 @@ public class ReconciliationService {
                 .map(discrepancy -> ReconDiff.from(date, discrepancy))
                 .toList();
 
+        // Replace, do not append. Running a date twice has to leave the table in
+        // the state one run would have left it in, and the reason to delete rather
+        // than merge is that a re-run usually means the inputs changed - a
+        // corrected statement, a backfilled order. Merging would produce the union
+        // of two contradictory reports and call it a day's findings.
+        //
+        // Both statements are in this method's one transaction, so there is no
+        // instant at which the day's findings are missing. A reader either sees
+        // the previous run's rows or this run's, never neither.
+        //
+        // The unique constraint added in V5 is what actually makes duplicates
+        // impossible; this delete is what decides what a re-run means. Two
+        // concurrent runs of the same date still collide there and one rolls
+        // back, which is the correct outcome - the surviving run's findings are
+        // internally consistent, whereas an interleaving of both would not be.
+        int replaced = diffs.deleteFindingsFor(date);
         diffs.saveAll(rows);
+
+        if (replaced > 0) {
+            log.info("replaced {} rows left by an earlier run of {}", replaced, date);
+        }
 
         Result result = new Result(date, localSide.size(), channelSide.size(), countByType(found));
         log.info("reconciled {}: {} local, {} channel, {} discrepancies {}",

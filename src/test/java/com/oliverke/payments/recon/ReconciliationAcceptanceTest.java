@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The acceptance criterion for Step 8, stated exactly as CLAUDE.md states it:
@@ -73,14 +75,10 @@ class ReconciliationAcceptanceTest {
         ReconciliationService.Result result = reconciliation.reconcile(DAY);
 
         List<String> expected = injectedKeys();
-        List<String> actual = diffs.findByReconDateOrderByChannelRefAscDiffTypeAsc(DAY).stream()
-                .map(diff -> diff.getDiffType() + "|" + diff.getChannelRef())
-                .sorted()
-                .toList();
 
         // Set equality in both directions at once: a missed discrepancy and an
         // invented one are both failures, and this catches either.
-        assertThat(actual)
+        assertThat(findingKeys())
                 .as("what reconciliation found vs what the generator injected")
                 .containsExactlyElementsOf(expected);
 
@@ -123,6 +121,48 @@ class ReconciliationAcceptanceTest {
     }
 
     /**
+     * Step 9. Before the fix this appended: the job reported 12 discrepancies
+     * every run and the table held 24 rows after two, which is the shape of bug
+     * that survives longest - the logs look correct and only whatever reads the
+     * table is wrong.
+     */
+    @Test
+    void reRunningADayReplacesItsFindingsRatherThanAppending() {
+        generator.generate(properties());
+
+        reconciliation.reconcile(DAY);
+        List<String> afterFirstRun = findingKeys();
+
+        reconciliation.reconcile(DAY);
+        reconciliation.reconcile(DAY);
+
+        assertThat(findingKeys())
+                .as("three runs must leave exactly what one run leaves")
+                .isEqualTo(afterFirstRun);
+        assertThat(diffs.countByReconDate(DAY)).isEqualTo(4L * EACH_TYPE);
+    }
+
+    /**
+     * The guarantee lives in the schema, not in the service. Even if the replace
+     * logic were removed or a future caller wrote rows some other way, the
+     * database refuses a second copy of a finding.
+     */
+    @Test
+    void theDatabaseItselfRefusesADuplicateFinding() {
+        generator.generate(properties());
+        reconciliation.reconcile(DAY);
+
+        ReconDiff existing = diffs.findByReconDateOrderByChannelRefAscDiffTypeAsc(DAY).get(0);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO recon_diff (recon_date, diff_type, channel_ref, order_no, merchant_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                DAY, existing.getDiffType().name(), existing.getChannelRef(), "PO_DUP", "M-001"))
+                .isInstanceOf(DuplicateKeyException.class);
+    }
+
+    /**
      * Reconciliation reports; it never repairs. A job that can change an order's
      * fate because a file said so is a bigger risk than the discrepancy it would
      * be fixing.
@@ -144,6 +184,14 @@ class ReconciliationAcceptanceTest {
         return new StatementProperties(
                 DAY, ORDERS, 42L, STATEMENT_DIR, 0.9,
                 EACH_TYPE, EACH_TYPE, EACH_TYPE, EACH_TYPE);
+    }
+
+    /** What is actually in recon_diff, in the same shape as the ground truth. */
+    private List<String> findingKeys() {
+        return diffs.findByReconDateOrderByChannelRefAscDiffTypeAsc(DAY).stream()
+                .map(diff -> diff.getDiffType() + "|" + diff.getChannelRef())
+                .sorted()
+                .toList();
     }
 
     /** Ground truth, in the same {@code TYPE|channelRef} shape as the assertion. */
