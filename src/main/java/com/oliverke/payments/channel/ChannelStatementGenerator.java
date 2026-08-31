@@ -60,17 +60,21 @@ public class ChannelStatementGenerator {
     }
 
     public Result generate(StatementProperties props) {
-        if (props.orders() < props.minimumOrders()) {
-            throw new IllegalArgumentException(
-                    "cannot inject %d discrepancies into %d orders"
-                            .formatted(props.minimumOrders(), props.orders()));
-        }
-
         // One Random threaded through both halves, so a seed reproduces the whole
         // day - the orders, the outcomes and the injections alike.
         Random random = new Random(props.seed());
 
         List<PaymentOrder> settled = simulator.seedAndSettle(props, random);
+
+        // Checked against the orders that exist, not the number requested. Those
+        // are the same thing when the simulator seeds the day, and different when
+        // it is handed a day that was already there - and it is the real count
+        // that has to be big enough to carve the injections out of.
+        if (settled.size() < props.minimumOrders()) {
+            throw new IllegalArgumentException(
+                    "cannot inject %d discrepancies into %d settled orders for %s"
+                            .formatted(props.minimumOrders(), settled.size(), props.date()));
+        }
 
         return writeStatement(props, settled, random);
     }

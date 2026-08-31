@@ -25,6 +25,11 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+          # Matches the recon_diff sequence allocationSize. Only the diff writes
+          # can actually batch - payment_order keeps an identity column, so its
+          # inserts are one statement per row regardless of what is set here.
+          batch_size: 50
+        order_inserts: true
 
   flyway:
     enabled: true

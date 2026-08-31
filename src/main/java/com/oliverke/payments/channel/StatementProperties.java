@@ -25,7 +25,7 @@ import java.time.LocalDate;
 @ConfigurationProperties(prefix = "statement")
 public record StatementProperties(
         LocalDate date,
-        int orders,
+        Integer orders,
         long seed,
         String outputDir,
         double successRate,
@@ -38,8 +38,15 @@ public record StatementProperties(
         if (date == null) {
             date = LocalDate.now(java.time.ZoneOffset.UTC);
         }
-        if (orders <= 0) {
+        // Integer rather than int so that "unset" and "zero" are different
+        // things. Unset means the ordinary case, generate a day. Zero means the
+        // day already exists in the database and only its statement is wanted,
+        // which is how the Step 10 profiling data is used.
+        if (orders == null) {
             orders = 200;
+        }
+        if (orders < 0) {
+            throw new IllegalArgumentException("statement.orders cannot be negative: " + orders);
         }
         if (outputDir == null || outputDir.isBlank()) {
             outputDir = "data/statements";

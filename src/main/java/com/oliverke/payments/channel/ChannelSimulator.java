@@ -60,6 +60,19 @@ public class ChannelSimulator {
         Instant dayStart = props.date().atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant nextDay = props.date().plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
+        // orders = 0 means "the day is already there, just write its statement".
+        // That is what the Step 10 profiling data needs: perf/seed.sql builds 1.2M
+        // rows in SQL, already settled, and asking the simulator to walk them
+        // through the state machine would both take forever and fail - they are in
+        // terminal states already, which is exactly what transitionTo forbids.
+        if (props.orders() == 0) {
+            List<PaymentOrder> existing = orders.findCreatedBetween(dayStart, nextDay).stream()
+                    .filter(order -> order.getChannelRef() != null)
+                    .toList();
+            log.info("using {} existing settled orders for {}", existing.size(), props.date());
+            return existing;
+        }
+
         seed(props, random, dayStart);
 
         List<PaymentOrder> day = orders.findCreatedBetween(dayStart, nextDay);

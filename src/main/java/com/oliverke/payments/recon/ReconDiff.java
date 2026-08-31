@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
@@ -27,8 +28,15 @@ import java.time.LocalDate;
 @Table(name = "recon_diff")
 public class ReconDiff {
 
+    /**
+     * Sequence, not identity - see V6. Identity forces one round trip per row to
+     * read the generated key back, which made writing 160 diff rows the most
+     * expensive phase of the whole job. allocationSize must stay equal to the
+     * sequence INCREMENT BY and to hibernate.jdbc.batch_size.
+     */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "recon_diff_id_seq")
+    @SequenceGenerator(name = "recon_diff_id_seq", sequenceName = "recon_diff_id_seq", allocationSize = 50)
     private Long id;
 
     @Column(name = "recon_date", nullable = false, updatable = false)

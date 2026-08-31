@@ -1,7 +1,5 @@
 package com.oliverke.payments.recon;
 
-import com.oliverke.payments.order.PaymentOrder;
-import com.oliverke.payments.order.PaymentOrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -30,18 +28,18 @@ public class ReconciliationService {
 
     private static final Logger log = LoggerFactory.getLogger(ReconciliationService.class);
 
-    private final PaymentOrderRepository orders;
+    private final LocalSideRepository localSide;
     private final ReconDiffRepository diffs;
     private final StatementReader reader;
     private final ReconciliationComparator comparator;
     private final ReconciliationProperties properties;
 
-    ReconciliationService(PaymentOrderRepository orders,
+    ReconciliationService(LocalSideRepository localSide,
                           ReconDiffRepository diffs,
                           StatementReader reader,
                           ReconciliationComparator comparator,
                           ReconciliationProperties properties) {
-        this.orders = orders;
+        this.localSide = localSide;
         this.diffs = diffs;
         this.reader = reader;
         this.comparator = comparator;
@@ -62,6 +60,7 @@ public class ReconciliationService {
      */
     @Transactional
     public Result reconcile(LocalDate date) {
+        long startedAt = System.nanoTime();
         Path statementFile = statementFileFor(date);
 
         if (!Files.exists(statementFile)) {
@@ -70,10 +69,18 @@ public class ReconciliationService {
                             .formatted(date, statementFile));
         }
 
+        // Timed per phase rather than end to end. A single total tells you the job
+        // got slower and nothing about which part; these four numbers are what
+        // decide whether the next hour is worth spending on SQL or on the parser.
+        long t0 = System.nanoTime();
         List<ReconRecord> channelSide = reader.read(statementFile);
-        List<ReconRecord> localSide = localSideFor(date);
 
-        List<ReconciliationComparator.Discrepancy> found = comparator.compare(localSide, channelSide);
+        long t1 = System.nanoTime();
+        List<ReconRecord> localRecords = localSideFor(date);
+
+        long t2 = System.nanoTime();
+        List<ReconciliationComparator.Discrepancy> found = comparator.compare(localRecords, channelSide);
+        long t3 = System.nanoTime();
 
         List<ReconDiff> rows = found.stream()
                 .map(discrepancy -> ReconDiff.from(date, discrepancy))
@@ -101,10 +108,15 @@ public class ReconciliationService {
             log.info("replaced {} rows left by an earlier run of {}", replaced, date);
         }
 
-        Result result = new Result(date, localSide.size(), channelSide.size(), countByType(found));
-        log.info("reconciled {}: {} local, {} channel, {} discrepancies {}",
-                date, result.localRecords(), result.channelRecords(),
+        long t4 = System.nanoTime();
+
+        Result result = new Result(date, localRecords.size(), channelSide.size(), countByType(found));
+        log.info("reconciled {} in {} ms: {} local, {} channel, {} discrepancies {}",
+                date, ms(startedAt, t4),
+                result.localRecords(), result.channelRecords(),
                 found.size(), result.byType());
+        log.info("  phases (ms): read-statement={} load-local={} compare={} write-diffs={}",
+                ms(t0, t1), ms(t1, t2), ms(t2, t3), ms(t3, t4));
 
         return result;
     }
@@ -123,19 +135,11 @@ public class ReconciliationService {
         Instant from = date.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant to = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
-        return orders.findCreatedBetween(from, to).stream()
-                .filter(order -> order.getChannelRef() != null)
-                .map(ReconciliationService::toRecord)
-                .toList();
+        return localSide.findReconcilableBetween(from, to);
     }
 
-    private static ReconRecord toRecord(PaymentOrder order) {
-        return new ReconRecord(
-                order.getChannelRef(),
-                order.getOrderNo(),
-                order.getMerchantId(),
-                order.getAmount(),
-                order.getStatus());
+    private static long ms(long fromNanos, long toNanos) {
+        return (toNanos - fromNanos) / 1_000_000;
     }
 
     private Path statementFileFor(LocalDate date) {
