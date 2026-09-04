@@ -1,10 +1,19 @@
 # Local development dependencies. The application itself runs on the host
 # (./mvnw spring-boot:run) so that restarts are instant during development;
-# only the stateful services live in containers.
+# only the stateful service lives in a container.
 #
 # Versions are pinned to a minor release, not `latest`: a reconciliation job is
 # sensitive to query planner behaviour, and the Step 10 EXPLAIN numbers are only
 # meaningful if everyone runs the same Postgres.
+#
+# There is no Redis here, and that is a decision rather than an omission. It was
+# the obvious place to put idempotency keys - SETNX is one round trip and far
+# faster than an INSERT. It is not used because a second system can disagree with
+# the database: if Redis grants a key and the transaction then rolls back the key
+# is burned, and if Redis loses a key to eviction or a failover the payer is
+# charged twice. The unique index lives in the same transaction as the money and
+# cannot contradict it. Redis earns its place in front of this as a rate limiter,
+# not underneath it as the source of truth.
 
 services:
   postgres:
@@ -31,22 +40,5 @@ services:
       retries: 10
       start_period: 10s
 
-  redis:
-    image: redis:8.8-alpine
-    container_name: prs-redis
-    # appendonly on: if Redis ever holds anything we would miss after a restart,
-    # this is the cheap insurance. Not yet used by the application - see README.
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
 volumes:
   postgres-data:
-  redis-data:
