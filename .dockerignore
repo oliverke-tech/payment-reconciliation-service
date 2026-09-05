@@ -1,0 +1,25 @@
+# Everything the build does not need. Keeping this tight matters for more than
+# speed: whatever lands in the build context can end up in an image layer, and
+# .env and data/ are exactly the things that must not.
+
+target/
+!.mvn/wrapper/maven-wrapper.properties
+
+.git/
+.gitignore
+.gitattributes
+
+.idea/
+*.iml
+.vscode/
+
+data/
+loadtest/results/
+perf/
+
+.env
+*.log
+README.md
+CLAUDE.md
+docker-compose.yml
+Dockerfile

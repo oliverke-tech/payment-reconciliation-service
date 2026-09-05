@@ -1,0 +1,55 @@
+# Fly.io deployment.
+#
+# Secrets are never in this file. DB_URL, DB_USER and DB_PASSWORD are set with
+# `fly secrets set`, which stores them encrypted and injects them at boot - see
+# deploy/README.md for the sequence.
+
+app = "payment-reconciliation-service"
+primary_region = "yyz"   # Toronto: the database should be in the same region,
+                         # since every request here does at least one round trip
+                         # to it and cross-region latency would dominate the
+                         # numbers this project exists to measure.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SPRING_PROFILES_ACTIVE = "prod"
+  # Small on purpose. Neon caps connections, and two machines each holding a
+  # generous pool exhausts that ceiling before the application is under any real
+  # load. Sized from the database, not from the app.
+  DB_POOL_SIZE = "5"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Scale to zero. This is a portfolio demo that is idle almost all of the time,
+  # and the cost of a cold start here is a few seconds of JVM boot rather than a
+  # correctness problem. It does mean the first request after a quiet period is
+  # slow, which is worth saying out loud before someone clicks the link and
+  # concludes the service is slow.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    # Readiness, not plain health: it reports UP only once the datasource is
+    # actually reachable, so Fly does not route traffic to a machine whose
+    # connection pool has not come up yet.
+    path = "/actuator/health/readiness"
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "40s"   # JVM start plus Flyway; too short and Fly kills the
+                           # machine mid-migration, over and over.
+    method = "GET"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"   # The image sets -XX:MaxRAMPercentage=75, so the heap sizes
+                     # itself from this number rather than from the host's RAM.
+
+[deploy]
+  # Rolling, with the graceful shutdown configured in application-prod.yml, so
+  # in-flight requests finish instead of being cut off mid-transaction.
+  strategy = "rolling"

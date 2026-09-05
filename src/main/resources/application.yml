@@ -49,3 +49,10 @@ management:
 logging:
   level:
     org.flywaydb: INFO
+
+reconciliation:
+  statement-dir: data/statements
+  scheduled:
+    # On locally: the generator puts statements where the job expects them.
+    # Turned off in the prod profile - see application-prod.yml.
+    enabled: true

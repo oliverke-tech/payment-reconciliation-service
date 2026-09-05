@@ -1,0 +1,81 @@
+# Profile: prod
+#
+# Everything here is driven by environment variables, with no secret and no
+# hostname committed. The image is identical between environments; only the
+# variables differ.
+
+server:
+  # Railway and Fly both hand the process a port to bind. Defaulting to 8080
+  # keeps the image runnable with plain `docker run` as well.
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    # Finish in-flight requests before the process exits. A rolling deploy that
+    # drops a create-order request mid-transaction is exactly the situation the
+    # idempotency key exists to survive - but not needing it is better.
+    timeout-per-shutdown-phase: 25s
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      # Deliberately small. Neon is serverless Postgres with a low connection
+      # ceiling, and a pool sized for a dedicated database will exhaust it as
+      # soon as a second instance starts. Read this next to the Week 1 finding
+      # that a pool of 10 was enough to serialise 200 concurrent requests: the
+      # right number is a property of the database, not of the application.
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+      # Serverless Postgres suspends idle compute, so a pooled connection can be
+      # dead while looking healthy. Retire connections well before that happens
+      # rather than discovering it inside a transaction.
+      max-lifetime: 240000
+      idle-timeout: 120000
+      keepalive-time: 60000
+      pool-name: prs-pool
+
+  jpa:
+    # Flyway still owns the schema; Hibernate still only validates it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    # Migrations run at startup. Acceptable at this size, and worth being able to
+    # defend: it means a deploy of two instances races to migrate, which Flyway
+    # handles with a lock, and it means a bad migration takes the service down
+    # rather than leaving it running against a schema it does not match. At a
+    # larger scale migrations become their own pipeline step ahead of the deploy.
+    locations: classpath:db/migration
+
+reconciliation:
+  statement-dir: ${STATEMENT_DIR:/app/data/statements}
+  scheduled:
+    # Off by default in a deployed environment. Nothing delivers statement files
+    # to this container, so the nightly job would do nothing but log an error at
+    # 02:30 every night - and an alert that is always red trains everyone to
+    # ignore it. Reconciliation is demonstrated locally, where the generator
+    # produces a statement to reconcile against.
+    enabled: ${RECONCILIATION_SCHEDULE_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Narrower than local. readiness/liveness are what the platform polls;
+        # the full health detail and the metrics endpoint are not for the public
+        # internet.
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.oliverke.payments: INFO
